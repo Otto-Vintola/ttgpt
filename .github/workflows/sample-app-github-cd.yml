@@ -69,17 +69,23 @@ jobs:
       #    tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
       #    subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      - name: Login to Azure
+      #- name: 'Deploy to Azure Web App'
+      #  uses: azure/webapps-deploy@v2
+      #  id: deploy-to-webapp
+      #  with:
+      #    app-name: 'sample-app-github-cd'
+      #    slot-name: 'Production'
+          
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_PUBLISH_PROFILE }}
+
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
+        id: deploy-to-webapp
         with:
           app-name: 'staz-nonprod-ttgpt'
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
           package: '.'
-
-      - name: 'Deploy to Azure Web App'
-        uses: azure/webapps-deploy@v2
-        id: deploy-to-webapp
-        with:
-          app-name: 'sample-app-github-cd'
-          slot-name: 'Production'
-          
