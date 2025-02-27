@@ -406,7 +406,7 @@ def init_openai_client(use_data=SHOULD_USE_DATA):
         raise e
 
 
-def init_cosmosdb_client():
+async def init_cosmosdb_client():
     cosmos_conversation_client = None
     if CHAT_HISTORY_ENABLED:
         try:
@@ -415,7 +415,8 @@ def init_cosmosdb_client():
             )
 
             if not AZURE_COSMOSDB_ACCOUNT_KEY:
-                credential = DefaultAzureCredential()
+                async with DefaultAzureCredential() as credential:
+                    credential = credential
             else:
                 credential = AZURE_COSMOSDB_ACCOUNT_KEY
 
