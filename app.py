@@ -1038,8 +1038,8 @@ async def get_indexer_status():
             return jsonify({"error": str(e)}), 500
             
         credential = AzureKeyCredential(AZURE_SEARCH_KEY)
-        async with SearchIndexerClient(AZURE_SEARCH_ENDPOINT, credential) as indexer_client:
-            indexer_status = await indexer_client.get_indexer_status(indexer_name)
+        indexer_client = SearchIndexerClient(AZURE_SEARCH_ENDPOINT, credential)
+        indexer_status = await indexer_client.get_indexer_status(indexer_name)
         status = "notStarted"
         # Parse and add variables for each piece of information that the status check returns
         if (indexer_status.last_result is not None): 
