@@ -1022,6 +1022,8 @@ async def index_document():
         # create indexer clone - newly created indexers will automatically run
         await indexer_client.create_indexer(new_indexer)
 
+        indexer_client.close()
+
         return jsonify({"indexer_name": new_indexer_name}), 200
     except Exception as e:
         abort(500, description=str(e))
@@ -1047,6 +1049,8 @@ async def get_indexer_status():
         
         if (status == "success" or status == "transientFailure"):
             await indexer_client.delete_indexer(indexer_name)
+
+        indexer_client.close()
 
         return jsonify({"status": status}), 200
     except Exception as e:
