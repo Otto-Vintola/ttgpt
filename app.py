@@ -1057,7 +1057,7 @@ async def get_indexer_status():
 
         return jsonify({"status": status}), 200
     except Exception as e:
-        logging.exception("Exception in /indexer/status" + indexer_name)
+        logging.exception("Exception in /indexer/status" + indexer_name["indexName"])
         return jsonify({"error": str(e)}), 500  
     
 def get_stream_size(stream):
