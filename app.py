@@ -1023,6 +1023,7 @@ async def index_document():
         await indexer_client.create_indexer(new_indexer)
 
         indexer_client.close()
+        credential.close()
 
         return jsonify({"indexer_name": new_indexer_name}), 200
     except Exception as e:
@@ -1051,6 +1052,7 @@ async def get_indexer_status():
             await indexer_client.delete_indexer(indexer_name)
 
         indexer_client.close()
+        credential.close()
 
         return jsonify({"status": status}), 200
     except Exception as e:
