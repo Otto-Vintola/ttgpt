@@ -1032,7 +1032,12 @@ async def get_indexer_status():
     try:
         try:
             request_json = await request.get_json()
+            logging.debug(f"Received request JSON: {request_json}")  # Add this line
             indexer_name = request_json.get('indexName')
+            logging.debug(f"Extracted indexer name: {indexer_name}")  # Add this line
+            
+            if not indexer_name:
+                return jsonify({"error": "indexName is required"}), 400
         except Exception as e:
             logging.exception("Exception in /indexer/status request json")
             return jsonify({"error": str(e)}), 500
