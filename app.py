@@ -20,8 +20,7 @@ from quart import (
     make_response,
     request,
     send_from_directory,
-    render_template,
-    current_app
+    render_template
 )
 
 from openai import AsyncAzureOpenAI
@@ -30,7 +29,6 @@ from backend.auth.auth_utils import get_authenticated_user_details
 from backend.security.ms_defender_utils import get_msdefender_user_json
 from backend.history.cosmosdbservice import CosmosConversationClient
 
-cosmos_db_ready = asyncio.Event()
 
 from backend.utils import (
     format_as_ndjson,
@@ -70,16 +68,6 @@ def create_app():
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     if DOCUPLOAD_MAX_SIZE_MB:
         app.config['MAX_CONTENT_LENGTH'] = int(DOCUPLOAD_MAX_SIZE_MB) * 1024 * 1024
-
-    @app.before_serving
-    async def init():
-        try:
-            app.cosmos_conversation_client = await init_cosmosdb_client()
-            cosmos_db_ready.set()
-        except Exception as e:
-            logging.error("Error initializing Cosmos DB client", e)
-            cosmos_db_ready.set()
-            raise e
     return app
 
 
@@ -1172,7 +1160,6 @@ async def upload_document():
 ## Conversation History API ##
 @bp.route("/history/generate", methods=["POST"])
 async def add_conversation():
-    await cosmos_db_ready.wait()
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user["user_principal_id"]
 
@@ -1190,7 +1177,7 @@ async def add_conversation():
         history_metadata = {}
         if not conversation_id:
             title = await generate_title(request_json["messages"])
-            conversation_dict = await current_app.cosmos_conversation_client.create_conversation(
+            conversation_dict = await cosmos_conversation_client.create_conversation(
                 user_id=user_id, title=title
             )
             conversation_id = conversation_dict["id"]
@@ -1201,7 +1188,7 @@ async def add_conversation():
         ## then write it to the conversation history in cosmos
         messages = request_json["messages"]
         if len(messages) > 0 and messages[-1]["role"] == "user":
-            createdMessageValue = await current_app.cosmos_conversation_client.create_message(
+            createdMessageValue = await cosmos_conversation_client.create_message(
                 uuid=str(uuid.uuid4()),
                 conversation_id=conversation_id,
                 user_id=user_id,
@@ -1216,7 +1203,7 @@ async def add_conversation():
         else:
             raise Exception("No user message found")
 
-        #await cosmos_conversation_client.cosmosdb_client.close()
+        await cosmos_conversation_client.cosmosdb_client.close()
 
         # Submit request to Chat Completions for response
         request_body = await request.get_json()
@@ -1231,7 +1218,6 @@ async def add_conversation():
 
 @bp.route("/history/update", methods=["POST"])
 async def update_conversation():
-    await cosmos_db_ready.wait()
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user["user_principal_id"]
 
@@ -1241,7 +1227,8 @@ async def update_conversation():
 
     try:
         # make sure cosmos is configured
-        if not current_app.cosmos_conversation_client:
+        cosmos_conversation_client = init_cosmosdb_client()
+        if not cosmos_conversation_client:
             raise Exception("CosmosDB is not configured or not working")
 
         # check for the conversation_id, if the conversation is not set, we will create a new one
@@ -1254,14 +1241,14 @@ async def update_conversation():
         if len(messages) > 0 and messages[-1]["role"] == "assistant":
             if len(messages) > 1 and messages[-2].get("role", None) == "tool":
                 # write the tool message first
-                await current_app.cosmos_conversation_client.create_message(
+                await cosmos_conversation_client.create_message(
                     uuid=str(uuid.uuid4()),
                     conversation_id=conversation_id,
                     user_id=user_id,
                     input_message=messages[-2],
                 )
             # write the assistant message
-            await current_app.cosmos_conversation_client.create_message(
+            await cosmos_conversation_client.create_message(
                 uuid=messages[-1]["id"],
                 conversation_id=conversation_id,
                 user_id=user_id,
@@ -1271,7 +1258,7 @@ async def update_conversation():
             raise Exception("No bot messages found")
 
         # Submit request to Chat Completions for response
-        #await cosmos_conversation_client.cosmosdb_client.close()
+        await cosmos_conversation_client.cosmosdb_client.close()
         response = {"success": True}
         return jsonify(response), 200
 
@@ -1282,10 +1269,9 @@ async def update_conversation():
 
 @bp.route("/history/message_feedback", methods=["POST"])
 async def update_message():
-    await cosmos_db_ready.wait()
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user["user_principal_id"]
-    #cosmos_conversation_client = init_cosmosdb_client()
+    cosmos_conversation_client = init_cosmosdb_client()
 
     ## check request for message_id
     request_json = await request.get_json()
@@ -1299,7 +1285,7 @@ async def update_message():
             return jsonify({"error": "message_feedback is required"}), 400
 
         ## update the message in cosmos
-        updated_message = await current_app.cosmos_conversation_client.update_message_feedback(
+        updated_message = await cosmos_conversation_client.update_message_feedback(
             user_id, message_id, message_feedback
         )
         if updated_message:
@@ -1329,7 +1315,6 @@ async def update_message():
 
 @bp.route("/history/delete", methods=["DELETE"])
 async def delete_conversation():
-    await cosmos_db_ready.wait()
     ## get the user id from the request headers
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user["user_principal_id"]
@@ -1346,21 +1331,21 @@ async def delete_conversation():
             await docupload_delete_by_tag("conversation_id", f"{conversation_id}")
 
         ## make sure cosmos is configured
-        # cosmos_conversation_client = await init_cosmosdb_client()
-        if not current_app.cosmos_conversation_client:
+        cosmos_conversation_client = await init_cosmosdb_client()
+        if not cosmos_conversation_client:
             raise Exception("CosmosDB is not configured or not working")
 
         ## delete the conversation messages from cosmos first
-        deleted_messages = await current_app.cosmos_conversation_client.delete_messages(
+        deleted_messages = await cosmos_conversation_client.delete_messages(
             conversation_id, user_id
         )
 
         ## Now delete the conversation
-        deleted_conversation = await current_app.cosmos_conversation_client.delete_conversation(
+        deleted_conversation = await cosmos_conversation_client.delete_conversation(
             user_id, conversation_id
         )
 
-        # await cosmos_conversation_client.cosmosdb_client.close()
+        await cosmos_conversation_client.cosmosdb_client.close()
 
         return (
             jsonify(
@@ -1378,21 +1363,20 @@ async def delete_conversation():
 
 @bp.route("/history/list", methods=["GET"])
 async def list_conversations():
-    await cosmos_db_ready.wait()
     offset = request.args.get("offset", 0)
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user["user_principal_id"]
 
     ## make sure cosmos is configured
-    # cosmos_conversation_client = await init_cosmosdb_client()
-    if not current_app.cosmos_conversation_client:
+    cosmos_conversation_client = await init_cosmosdb_client()
+    if not cosmos_conversation_client:
         raise Exception("CosmosDB is not configured or not working")
 
     ## get the conversations from cosmos
-    conversations = await current_app.cosmos_conversation_client.get_conversations(
+    conversations = await cosmos_conversation_client.get_conversations(
         user_id, offset=offset, limit=25
     )
-    await current_app.cosmos_conversation_client.cosmosdb_client.close()
+    await cosmos_conversation_client.cosmosdb_client.close()
     if not isinstance(conversations, list):
         return jsonify({"error": f"No conversations for {user_id} were found"}), 404
 
@@ -1403,7 +1387,6 @@ async def list_conversations():
 
 @bp.route("/history/read", methods=["POST"])
 async def get_conversation():
-    await cosmos_db_ready.wait()
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user["user_principal_id"]
 
@@ -1415,12 +1398,12 @@ async def get_conversation():
         return jsonify({"error": "conversation_id is required"}), 400
 
     ## make sure cosmos is configured
-    # cosmos_conversation_client = await init_cosmosdb_client()
-    if not current_app.cosmos_conversation_client:
+    cosmos_conversation_client = await init_cosmosdb_client()
+    if not cosmos_conversation_client:
         raise Exception("CosmosDB is not configured or not working")
 
     ## get the conversation object and the related messages from cosmos
-    conversation = await current_app.cosmos_conversation_client.get_conversation(
+    conversation = await cosmos_conversation_client.get_conversation(
         user_id, conversation_id
     )
     ## return the conversation id and the messages in the bot frontend format
@@ -1435,7 +1418,7 @@ async def get_conversation():
         )
 
     # get the messages for the conversation from cosmos
-    conversation_messages = await current_app.cosmos_conversation_client.get_messages(
+    conversation_messages = await cosmos_conversation_client.get_messages(
         user_id, conversation_id
     )
 
@@ -1451,13 +1434,12 @@ async def get_conversation():
         for msg in conversation_messages
     ]
 
-    # await cosmos_conversation_client.cosmosdb_client.close()
+    await cosmos_conversation_client.cosmosdb_client.close()
     return jsonify({"conversation_id": conversation_id, "messages": messages}), 200
 
 
 @bp.route("/history/rename", methods=["POST"])
 async def rename_conversation():
-    await cosmos_db_ready.wait()
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user["user_principal_id"]
 
@@ -1469,12 +1451,12 @@ async def rename_conversation():
         return jsonify({"error": "conversation_id is required"}), 400
 
     ## make sure cosmos is configured
-    # cosmos_conversation_client = await init_cosmosdb_client()
-    if not current_app.cosmos_conversation_client:
+    cosmos_conversation_client = await init_cosmosdb_client()
+    if not cosmos_conversation_client:
         raise Exception("CosmosDB is not configured or not working")
 
     ## get the conversation from cosmos
-    conversation = await current_app.cosmos_conversation_client.get_conversation(
+    conversation = await cosmos_conversation_client.get_conversation(
         user_id, conversation_id
     )
     if not conversation:
@@ -1492,17 +1474,16 @@ async def rename_conversation():
     if not title:
         return jsonify({"error": "title is required"}), 400
     conversation["title"] = title
-    updated_conversation = await current_app.cosmos_conversation_client.upsert_conversation(
+    updated_conversation = await cosmos_conversation_client.upsert_conversation(
         conversation
     )
 
-    # await cosmos_conversation_client.cosmosdb_client.close()
+    await cosmos_conversation_client.cosmosdb_client.close()
     return jsonify(updated_conversation), 200
 
 
 @bp.route("/history/delete_all", methods=["DELETE"])
 async def delete_all_conversations():
-    await cosmos_db_ready.wait()
     ## get the user id from the request headers
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user["user_principal_id"]
@@ -1510,11 +1491,11 @@ async def delete_all_conversations():
     # get conversations for user
     try:
         ## make sure cosmos is configured
-        # cosmos_conversation_client = await init_cosmosdb_client()
-        if not current_app.cosmos_conversation_client:
+        cosmos_conversation_client = await init_cosmosdb_client()
+        if not cosmos_conversation_client:
             raise Exception("CosmosDB is not configured or not working")
 
-        conversations = await current_app.cosmos_conversation_client.get_conversations(
+        conversations = await cosmos_conversation_client.get_conversations(
             user_id, offset=0, limit=None
         )
         if not conversations:
@@ -1523,19 +1504,19 @@ async def delete_all_conversations():
         # delete each conversation
         for conversation in conversations:
             ## delete the conversation messages from cosmos first
-            deleted_messages = await current_app.cosmos_conversation_client.delete_messages(
+            deleted_messages = await cosmos_conversation_client.delete_messages(
                 conversation["id"], user_id
             )
 
             ## Now delete the conversation
-            deleted_conversation = await current_app.cosmos_conversation_client.delete_conversation(
+            deleted_conversation = await cosmos_conversation_client.delete_conversation(
                 user_id, conversation["id"]
             )
 
             if DOCUPLOAD_ENABLED:
                 await docupload_delete_by_tag("conversation_id", conversation['id'])
 
-        await current_app.cosmos_conversation_client.cosmosdb_client.close()
+        await cosmos_conversation_client.cosmosdb_client.close()
         return (
             jsonify(
                 {
@@ -1552,7 +1533,6 @@ async def delete_all_conversations():
 
 @bp.route("/history/clear", methods=["POST"])
 async def clear_messages():
-    await cosmos_db_ready.wait()
     ## get the user id from the request headers
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user["user_principal_id"]
@@ -1566,12 +1546,12 @@ async def clear_messages():
             return jsonify({"error": "conversation_id is required"}), 400
 
         ## make sure cosmos is configured
-        # cosmos_conversation_client = await init_cosmosdb_client()
-        if not current_app.cosmos_conversation_client:
+        cosmos_conversation_client = await init_cosmosdb_client()
+        if not cosmos_conversation_client:
             raise Exception("CosmosDB is not configured or not working")
 
         ## delete the conversation messages from cosmos
-        deleted_messages = await current_app.cosmos_conversation_client.delete_messages(
+        deleted_messages = await cosmos_conversation_client.delete_messages(
             conversation_id, user_id
         )
 
@@ -1591,19 +1571,18 @@ async def clear_messages():
 
 @bp.route("/history/ensure", methods=["GET"])
 async def ensure_cosmos():
-    await cosmos_db_ready.wait()
     if not AZURE_COSMOSDB_ACCOUNT:
         return jsonify({"error": "CosmosDB is not configured"}), 404
 
     try:
-        # cosmos_conversation_client = await init_cosmosdb_client()
-        success, err = await current_app.cosmos_conversation_client.ensure()
-        if not current_app.cosmos_conversation_client or not success:
+        cosmos_conversation_client = await init_cosmosdb_client()
+        success, err = await cosmos_conversation_client.ensure()
+        if not cosmos_conversation_client or not success:
             if err:
                 return jsonify({"error": err}), 422
             return jsonify({"error": "CosmosDB is not configured or not working"}), 500
 
-        # await cosmos_conversation_client.cosmosdb_client.close()
+        await cosmos_conversation_client.cosmosdb_client.close()
         return jsonify({"message": "CosmosDB is configured and working"}), 200
     except Exception as e:
         logging.exception("Exception in /history/ensure")
@@ -1651,6 +1630,7 @@ async def generate_title(conversation_messages):
         title = json.loads(response.choices[0].message.content)["title"]
         return title
     except Exception as e:
+        logging.exception("Exception in generate_title")
         return messages[-2]["content"]
 
 
