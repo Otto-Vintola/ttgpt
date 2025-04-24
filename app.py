@@ -1037,6 +1037,8 @@ async def get_indexer_status():
         try:
             request_json = await request.get_json()
             indexer_name = request_json.get('indexName')
+            print("indexer_name: ", indexer_name)
+            print("Rrequest JSON: ", request_json)
         except Exception as e:
             logging.exception("Exception in /indexer/status request json")
             return jsonify({"error": str(e)}), 500
