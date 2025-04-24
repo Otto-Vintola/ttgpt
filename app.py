@@ -406,7 +406,7 @@ def init_openai_client(use_data=SHOULD_USE_DATA):
         raise e
 
 
-async def init_cosmosdb_client():
+def init_cosmosdb_client():
     cosmos_conversation_client = None
     if CHAT_HISTORY_ENABLED:
         try:
@@ -415,8 +415,7 @@ async def init_cosmosdb_client():
             )
 
             if not AZURE_COSMOSDB_ACCOUNT_KEY:
-                async with DefaultAzureCredential() as credential:
-                    credential = credential
+                credential = DefaultAzureCredential()
             else:
                 credential = AZURE_COSMOSDB_ACCOUNT_KEY
 
@@ -1023,9 +1022,6 @@ async def index_document():
         # create indexer clone - newly created indexers will automatically run
         await indexer_client.create_indexer(new_indexer)
 
-        indexer_client.close()
-        credential.close()
-
         return jsonify({"indexer_name": new_indexer_name}), 200
     except Exception as e:
         abort(500, description=str(e))
@@ -1036,7 +1032,7 @@ async def get_indexer_status():
     try:
         try:
             request_json = await request.get_json()
-            indexer_name = "MY_INDEX" + str(request_json) #request_json.get('indexName')
+            indexer_name = request_json.get('indexName')
         except Exception as e:
             logging.exception("Exception in /indexer/status request json")
             return jsonify({"error": str(e)}), 500
@@ -1052,12 +1048,9 @@ async def get_indexer_status():
         if (status == "success" or status == "transientFailure"):
             await indexer_client.delete_indexer(indexer_name)
 
-        indexer_client.close()
-        credential.close()
-
         return jsonify({"status": status}), 200
     except Exception as e:
-        logging.exception("Exception in /indexer/status" + json.dumps(indexer_name))
+        logging.exception("Exception in /indexer/status")
         return jsonify({"error": str(e)}), 500  
     
 def get_stream_size(stream):
@@ -1088,7 +1081,7 @@ async def upload_document():
     except Exception as e:
         try:
             # make sure cosmos is configured
-            cosmos_conversation_client = await init_cosmosdb_client()
+            cosmos_conversation_client = init_cosmosdb_client()
             if not cosmos_conversation_client:
                 raise Exception("CosmosDB is not configured or not working")
 
@@ -1163,7 +1156,7 @@ async def add_conversation():
 
     try:
         # make sure cosmos is configured
-        cosmos_conversation_client = await init_cosmosdb_client()
+        cosmos_conversation_client = init_cosmosdb_client()
         if not cosmos_conversation_client:
             raise Exception("CosmosDB is not configured or not working")
 
@@ -1221,7 +1214,7 @@ async def update_conversation():
 
     try:
         # make sure cosmos is configured
-        cosmos_conversation_client = await init_cosmosdb_client()
+        cosmos_conversation_client = init_cosmosdb_client()
         if not cosmos_conversation_client:
             raise Exception("CosmosDB is not configured or not working")
 
@@ -1325,7 +1318,7 @@ async def delete_conversation():
             await docupload_delete_by_tag("conversation_id", f"{conversation_id}")
 
         ## make sure cosmos is configured
-        cosmos_conversation_client = await init_cosmosdb_client()
+        cosmos_conversation_client = init_cosmosdb_client()
         if not cosmos_conversation_client:
             raise Exception("CosmosDB is not configured or not working")
 
@@ -1362,7 +1355,7 @@ async def list_conversations():
     user_id = authenticated_user["user_principal_id"]
 
     ## make sure cosmos is configured
-    cosmos_conversation_client = await init_cosmosdb_client()
+    cosmos_conversation_client = init_cosmosdb_client()
     if not cosmos_conversation_client:
         raise Exception("CosmosDB is not configured or not working")
 
@@ -1392,7 +1385,7 @@ async def get_conversation():
         return jsonify({"error": "conversation_id is required"}), 400
 
     ## make sure cosmos is configured
-    cosmos_conversation_client = await init_cosmosdb_client()
+    cosmos_conversation_client = init_cosmosdb_client()
     if not cosmos_conversation_client:
         raise Exception("CosmosDB is not configured or not working")
 
@@ -1445,7 +1438,7 @@ async def rename_conversation():
         return jsonify({"error": "conversation_id is required"}), 400
 
     ## make sure cosmos is configured
-    cosmos_conversation_client = await init_cosmosdb_client()
+    cosmos_conversation_client = init_cosmosdb_client()
     if not cosmos_conversation_client:
         raise Exception("CosmosDB is not configured or not working")
 
@@ -1485,7 +1478,7 @@ async def delete_all_conversations():
     # get conversations for user
     try:
         ## make sure cosmos is configured
-        cosmos_conversation_client = await init_cosmosdb_client()
+        cosmos_conversation_client = init_cosmosdb_client()
         if not cosmos_conversation_client:
             raise Exception("CosmosDB is not configured or not working")
 
@@ -1508,7 +1501,7 @@ async def delete_all_conversations():
             )
 
             if DOCUPLOAD_ENABLED:
-                await docupload_delete_by_tag("conversation_id", conversation['id'])
+                await docupload_delete_by_tag("conversaton_id", conversation['id'])
 
         await cosmos_conversation_client.cosmosdb_client.close()
         return (
@@ -1540,7 +1533,7 @@ async def clear_messages():
             return jsonify({"error": "conversation_id is required"}), 400
 
         ## make sure cosmos is configured
-        cosmos_conversation_client = await init_cosmosdb_client()
+        cosmos_conversation_client = init_cosmosdb_client()
         if not cosmos_conversation_client:
             raise Exception("CosmosDB is not configured or not working")
 
@@ -1569,7 +1562,7 @@ async def ensure_cosmos():
         return jsonify({"error": "CosmosDB is not configured"}), 404
 
     try:
-        cosmos_conversation_client = await init_cosmosdb_client()
+        cosmos_conversation_client = init_cosmosdb_client()
         success, err = await cosmos_conversation_client.ensure()
         if not cosmos_conversation_client or not success:
             if err:
