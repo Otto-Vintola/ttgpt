@@ -20,7 +20,7 @@ from quart import (
     make_response,
     request,
     send_from_directory,
-    render_template
+    render_template,
 )
 
 from openai import AsyncAzureOpenAI
@@ -28,7 +28,6 @@ from azure.identity.aio import DefaultAzureCredential, get_bearer_token_provider
 from backend.auth.auth_utils import get_authenticated_user_details
 from backend.security.ms_defender_utils import get_msdefender_user_json
 from backend.history.cosmosdbservice import CosmosConversationClient
-
 
 from backend.utils import (
     format_as_ndjson,
@@ -351,7 +350,7 @@ SHOULD_USE_DATA = should_use_data()
 
 
 # Initialize Azure OpenAI Client
-async def init_openai_client(use_data=SHOULD_USE_DATA):
+def init_openai_client(use_data=SHOULD_USE_DATA):
     azure_openai_client = None
     try:
         # API version check
@@ -380,13 +379,9 @@ async def init_openai_client(use_data=SHOULD_USE_DATA):
         ad_token_provider = None
         if not aoai_api_key:
             logging.debug("No AZURE_OPENAI_KEY found, using Azure AD auth")
-            async with DefaultAzureCredential() as credential:
-                ad_token_provider = get_bearer_token_provider(
-                    credential, "https://cognitiveservices.azure.com/.default"
-                )
-            #ad_token_provider = get_bearer_token_provider(
-            #    DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
-            #)
+            ad_token_provider = get_bearer_token_provider(
+                DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+            )
 
         # Deployment
         deployment = AZURE_OPENAI_MODEL
@@ -932,7 +927,7 @@ async def send_chat_request(request_body, request_headers):
     model_args = prepare_model_args(request_body, request_headers)
 
     try:
-        azure_openai_client = await init_openai_client()
+        azure_openai_client = init_openai_client()
         raw_response = await azure_openai_client.chat.completions.with_raw_response.create(**model_args)
         response = raw_response.parse()
         apim_request_id = raw_response.headers.get("apim-request-id") 
@@ -1045,8 +1040,7 @@ async def get_indexer_status():
         except Exception as e:
             logging.exception("Exception in /indexer/status request json")
             return jsonify({"error": str(e)}), 500
-        
-        logging.debug(f"Indexer name: {indexer_name}")
+            
         credential = AzureKeyCredential(AZURE_SEARCH_KEY)
         indexer_client = SearchIndexerClient(AZURE_SEARCH_ENDPOINT, credential)
         indexer_status = await indexer_client.get_indexer_status(indexer_name)
@@ -1227,7 +1221,7 @@ async def update_conversation():
 
     try:
         # make sure cosmos is configured
-        cosmos_conversation_client = init_cosmosdb_client()
+        cosmos_conversation_client = await init_cosmosdb_client()
         if not cosmos_conversation_client:
             raise Exception("CosmosDB is not configured or not working")
 
@@ -1514,7 +1508,7 @@ async def delete_all_conversations():
             )
 
             if DOCUPLOAD_ENABLED:
-                await docupload_delete_by_tag("conversation_id", conversation['id'])
+                await docupload_delete_by_tag("conversaton_id", conversation['id'])
 
         await cosmos_conversation_client.cosmosdb_client.close()
         return (
@@ -1622,7 +1616,7 @@ async def generate_title(conversation_messages):
     messages.append({"role": "user", "content": title_prompt})
 
     try:
-        azure_openai_client = await init_openai_client(use_data=False)
+        azure_openai_client = init_openai_client(use_data=False)
         response = await azure_openai_client.chat.completions.create(
             model=AZURE_OPENAI_MODEL, messages=messages, temperature=1, max_tokens=64
         )
@@ -1630,7 +1624,6 @@ async def generate_title(conversation_messages):
         title = json.loads(response.choices[0].message.content)["title"]
         return title
     except Exception as e:
-        logging.exception("Exception in generate_title")
         return messages[-2]["content"]
 
 
