@@ -1036,7 +1036,7 @@ async def get_indexer_status():
     try:
         try:
             request_json = await request.get_json()
-            indexer_name = request_json.get('indexName')
+            indexer_name = "MY_INDEX" + str(request_json) #request_json.get('indexName')
         except Exception as e:
             logging.exception("Exception in /indexer/status request json")
             return jsonify({"error": str(e)}), 500
@@ -1508,7 +1508,7 @@ async def delete_all_conversations():
             )
 
             if DOCUPLOAD_ENABLED:
-                await docupload_delete_by_tag("conversaton_id", conversation['id'])
+                await docupload_delete_by_tag("conversation_id", conversation['id'])
 
         await cosmos_conversation_client.cosmosdb_client.close()
         return (
