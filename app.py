@@ -71,7 +71,7 @@ def create_app():
     if DOCUPLOAD_MAX_SIZE_MB:
         app.config['MAX_CONTENT_LENGTH'] = int(DOCUPLOAD_MAX_SIZE_MB) * 1024 * 1024
 
-    @app.before.serving
+    @app.before_serving
     async def init():
         try:
             app.cosmos_conversation_client = await init_cosmosdb_client()
