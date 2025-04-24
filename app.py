@@ -1035,8 +1035,6 @@ async def index_document():
 async def get_indexer_status():
     try:
         try:
-            logging.debug("indexer_name: %s", indexer_name)
-            logging.debug("Request JSON: %s", request_json)
             request_json = await request.get_json()
             indexer_name = request_json.get('indexName')
         except Exception as e:
@@ -1045,7 +1043,6 @@ async def get_indexer_status():
             
         credential = AzureKeyCredential(AZURE_SEARCH_KEY)
         indexer_client = SearchIndexerClient(AZURE_SEARCH_ENDPOINT, credential)
-        logging.debug("Here with indexer client")
         indexer_status = await indexer_client.get_indexer_status(indexer_name)
         status = "notStarted"
         # Parse and add variables for each piece of information that the status check returns
