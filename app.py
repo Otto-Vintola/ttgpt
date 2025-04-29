@@ -418,6 +418,38 @@ def init_openai_client(use_data=SHOULD_USE_DATA):
         raise e
 
 
+async def init_cosmosdb_client():
+    cosmos_conversation_client = None
+    if CHAT_HISTORY_ENABLED:
+        try:
+            cosmos_endpoint = (
+                  f"https://{AZURE_COSMOSDB_ACCOUNT}.documents.azure.com:443/"
+            )
+
+            if not AZURE_COSMOSDB_ACCOUNT_KEY:
+                async with DefaultAzureCredential() as credential:
+                    credential = credential
+            else:
+                credential = AZURE_COSMOSDB_ACCOUNT_KEY
+
+            cosmos_conversation_client = CosmosConversationClient(
+                    cosmosdb_endpoint=cosmos_endpoint,
+                    credential=credential,
+                    database_name=AZURE_COSMOSDB_DATABASE,
+                    container_name=AZURE_COSMOSDB_CONVERSATIONS_CONTAINER,
+                    enable_message_feedback=AZURE_COSMOSDB_ENABLE_FEEDBACK,
+                )
+        except Exception as e:
+            logging.exception("Exception in CosmosDB initialization", e)
+            cosmos_conversation_client = None
+            raise e
+    else:
+        logging.debug("CosmosDB not configured")
+
+    return cosmos_conversation_client
+        
+        
+
 def init_cosmosdb_client():
     cosmos_conversation_client = None
     if CHAT_HISTORY_ENABLED:
