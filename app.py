@@ -21,6 +21,7 @@ from quart import (
     request,
     send_from_directory,
     render_template,
+    current_app
 )
 
 from openai import AsyncAzureOpenAI
@@ -61,12 +62,23 @@ UI_SHOW_SHARE_BUTTON = os.environ.get("UI_SHOW_SHARE_BUTTON", "true").lower() ==
 
 DOCUPLOAD_MAX_SIZE_MB = os.environ.get("DOCUPLOAD_MAX_SIZE_MB")
 
+cosmos_db_ready = asyncio.Event()  # Functions can wait on the database to become available
+
 def create_app():
     app = Quart(__name__)
     app.register_blueprint(bp)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
-    if DOCUPLOAD_MAX_SIZE_MB:
-        app.config['MAX_CONTENT_LENGTH'] = int(DOCUPLOAD_MAX_SIZE_MB) * 1024 * 1024
+
+    @app.before_serving
+    async def init():
+        try:
+            app.cosmos_conversation_client = await init_cosmosdb_client()
+            cosmos_db_ready.set()
+        except Exception as e:
+            logging.exception("Failed to initialize CosmosDB client")
+            app.cosmos_conversation_client = None
+            raise e
+
     return app
 
 
