@@ -1,3 +1,13 @@
+'''
+BUG: LOCATION UNKNOWN. Happens when the app is running and a request is made to the server or before any message is sent.
+
+ERROR:asyncio:Unclosed connector
+connections: ['[(<aiohttp.client_proto.ResponseHandler object at "memory address">,  random 8 byte (? maybe 4 byte) floating point number)]']
+connector: <aiohttp.connector.TCPConnector object at "memory address">
+ERROR:asyncio:Unclosed client session
+
+'''
+
 import copy
 import json
 import os
@@ -774,6 +784,9 @@ def get_configured_data_source(conversation_id):
 def prepare_model_args(request_body, request_headers):
     request_messages = request_body.get("messages", [])
     conversation_id = request_body.get('conversation_id', None)
+    ## BUG: the history_metadata is not present in the request body
+    logging.debug(f"request_body: {request_body}")
+    logging.debug(f"request_headers: {request_headers}")
     if conversation_id is None:
         conversation_id = request_body['history_metadata']['conversation_id']
 
@@ -1044,10 +1057,10 @@ async def get_indexer_status():
             # Parse and add variables for each piece of information that the status check returns
             if (indexer_status.last_result is not None): 
                 status = str(indexer_status.last_result.status)
-            
+
             if (status == "success" or status == "transientFailure"):
                 await indexer_client.delete_indexer(indexer_name)
-    
+
             return jsonify({"status": status}), 200
     except Exception as e:
         logging.exception("Exception in /indexer/status")
@@ -1096,11 +1109,11 @@ async def upload_document():
             ## Format the incoming message object in the "chat/completions" messages format
             ## then write it to the conversation history in cosmos
             messages = [{'role': 'user', 'content': filename}]
-            createdMessageValue = await cosmos_conversation_client.create_message(
-                    uuid=str(uuid.uuid4()),
-                    conversation_id=conversation_id,
-                    user_id=user_id,
-                    input_message=messages[0]
+            createdMessageValue = await cosmos_conversation_client.create_message(                                                                      
+                    uuid=str(uuid.uuid4()),                                                                                                 
+                    conversation_id=conversation_id,                                                                                                
+                    user_id=user_id,                                                                                                                
+                    input_message=messages[0]                                                                                                               
                 )
             if createdMessageValue == "Conversation not found":
                 raise Exception("Conversation not found for the given conversation ID: " + conversation_id + ".")
@@ -1173,6 +1186,10 @@ async def add_conversation():
 
         ## Format the incoming message object in the "chat/completions" messages format
         ## then write it to the conversation history in cosmos
+
+        ## BUG: THIS IS BUGGED. The createdMessageValue is set as "Conversation not found" 
+        ## for an unknown reason, which causes the history/update API to fail because the given 
+        ## conversation_id is not found. Subsequently, the file deletions from Azure Blob storage is not carried out. 
         messages = request_json["messages"]
         if len(messages) > 0 and messages[-1]["role"] == "user":
             createdMessageValue = await cosmos_conversation_client.create_message(
@@ -1225,7 +1242,11 @@ async def update_conversation():
         ## Format the incoming message object in the "chat/completions" messages format
         ## then write it to the conversation history in cosmos
         messages = request_json["messages"]
-        if len(messages) > 0 and messages[-1]["role"] == "assistant":
+
+        ## BUG: The createdMessageValue is set as "Conversation not found" in the /history/generate API
+        ## which means the len(messages) > 0 check fails and the assistant message is not written to cosmos.
+        ## Consequently, an exception is raised and the conversation is terminated. 
+        if len(messages) > 0 and messages[-1]["role"] == "assistant": 
             if len(messages) > 1 and messages[-2].get("role", None) == "tool":
                 # write the tool message first
                 await cosmos_conversation_client.create_message(
@@ -1621,3 +1642,4 @@ async def generate_title(conversation_messages):
 
 
 app = create_app()
+
