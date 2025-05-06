@@ -52,7 +52,7 @@ UI_TITLE = os.environ.get("UI_TITLE") or "Contoso"
 UI_LOGO = os.environ.get("UI_LOGO")
 UI_CHAT_LOGO = os.environ.get("UI_CHAT_LOGO")
 UI_CHAT_TITLE = os.environ.get("UI_CHAT_TITLE") or "Start chatting"
-UI_CHAT_DESCRIPTION = (
+UI_CHAT_DESCRIPTION = ( 
     os.environ.get("UI_CHAT_DESCRIPTION")
     or "This chatbot is configured to answer your questions"
 )
@@ -1040,15 +1040,15 @@ async def get_indexer_status():
         credential = AzureKeyCredential(AZURE_SEARCH_KEY)
         async with SearchIndexerClient(AZURE_SEARCH_ENDPOINT, credential) as indexer_client:
             indexer_status = await indexer_client.get_indexer_status(indexer_name)
-        status = "notStarted"
-        # Parse and add variables for each piece of information that the status check returns
-        if (indexer_status.last_result is not None): 
-            status = str(indexer_status.last_result.status)
-        
-        if (status == "success" or status == "transientFailure"):
-            await indexer_client.delete_indexer(indexer_name)
-
-        return jsonify({"status": status}), 200
+            status = "notStarted"
+            # Parse and add variables for each piece of information that the status check returns
+            if (indexer_status.last_result is not None): 
+                status = str(indexer_status.last_result.status)
+            
+            if (status == "success" or status == "transientFailure"):
+                await indexer_client.delete_indexer(indexer_name)
+    
+            return jsonify({"status": status}), 200
     except Exception as e:
         logging.exception("Exception in /indexer/status")
         return jsonify({"error": str(e)}), 500  
